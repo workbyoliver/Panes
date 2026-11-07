@@ -1,0 +1,86 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.47000,0.71000,1.00000,1.00000",
+      "srgb:0.15000,0.22000,0.60000,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.14999999999999999,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.84999999999999998,
+        "y" : 1
+      }
+    }
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "target.svg",
+          "name" : "Target"
+        }
+      ],
+      "name" : "Target",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.25
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "zones.svg",
+          "name" : "Zones",
+          "opacity" : 0.75
+        }
+      ],
+      "name" : "Zones",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.34999999999999998
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.55000000000000004
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "glow.png",
+          "name" : "Glow"
+        },
+        {
+          "glass" : false,
+          "image-name" : "shade.png",
+          "name" : "Shade"
+        }
+      ],
+      "name" : "Field",
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}
