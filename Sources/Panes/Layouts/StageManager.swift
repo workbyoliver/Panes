@@ -11,6 +11,12 @@ enum StageManager {
 
     static var isOn: Bool { read().on }
 
+    /// Stage Manager is on and its strip is showing (whether or not zones leave room for it).
+    static var stripShowing: Bool {
+        let state = read()
+        return state.on && state.stripShown
+    }
+
     /// The space zones leave on the left of each display.
     static var leftInset: CGFloat {
         let state = read()

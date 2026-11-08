@@ -49,14 +49,24 @@ struct PanesPanelView: View {
 private struct LayoutGrid: View {
     let model: PanelModel
 
+    /// Where the dragged tile is drawn, relative to its place in the grid.
+    @State private var dragOffset: CGSize = .zero
+    /// Where in the tile the drag started, so the tile stays under the pointer.
+    @State private var grab: CGSize = .zero
+
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    private static let space = "layoutGrid"
+    private static let tileWidth = (PanelLayout.contentWidth - 16) / 3
+    private static let columnPitch = tileWidth + 8
+    private static let rowPitch: CGFloat = 52 + 6 + 18 + 10 // tile, gap, caption, row spacing
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Edit mode swaps contents in place (this row's text, each tile's caption) and never
-            // changes the panel's size: a resize while open looked broken.
-            HStack {
-                if model.isEditingShortcuts {
+            // Edit mode swaps contents in place (this row's text, each tile's caption, badges
+            // drawn over the tiles) and never changes the panel's size: a resize while open
+            // looked broken.
+            HStack(spacing: 12) {
+                if model.isEditing {
                     Text(editingHint)
                         .font(.caption)
                         .foregroundStyle(model.recordingNote == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
@@ -66,36 +76,129 @@ private struct LayoutGrid: View {
                     SectionTitle("Layout")
                 }
                 Spacer(minLength: 8)
-                FooterButton(title: model.isEditingShortcuts ? "Done" : "Shortcuts",
-                             symbol: model.isEditingShortcuts ? "checkmark" : "keyboard", font: .caption) {
-                    model.toggleEditingShortcuts()
+                if !model.isEditing {
+                    FooterButton(title: "New", symbol: "plus", font: .caption) { model.newLayout() }
+                        .disabled(!model.canAddLayout)
+                        .help(model.canAddLayout ? "Draw a new layout for this display"
+                                                 : "This display has 9 layouts, the most it can have. Delete one to add another.")
+                }
+                FooterButton(title: model.isEditing ? "Done" : "Edit",
+                             symbol: model.isEditing ? "checkmark" : "pencil", font: .caption) {
+                    model.toggleEditing()
                 }
             }
             .frame(height: 18)
-            GlassEffectContainer(spacing: 8) {
+            GlassEffectContainer(spacing: model.isEditing ? 0 : 8) {
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(model.layouts) { layout in
+                        let isDragged = model.draggingID == layout.id
                         LayoutTile(layout: layout,
                                    isSelected: layout.id == model.active?.id,
                                    shortcut: model.shortcutText[layout.id],
                                    isTaken: model.takenShortcuts.contains(layout.id),
-                                   isEditing: model.isEditingShortcuts,
-                                   isRecording: model.recordingID == layout.id) {
-                            model.tap(layout)
+                                   isEditing: model.isEditing,
+                                   isRecording: model.recordingID == layout.id,
+                                   onTap: { model.tap(layout) },
+                                   onShortcut: { model.recordShortcut(layout) })
+                            .modifier(Wiggle(isOn: model.isEditing && !isDragged, seed: layout.id.hashValue))
+                            .scaleEffect(isDragged ? 1.08 : 1)
+                            .offset(isDragged ? dragOffset : .zero)
+                            .zIndex(isDragged ? 1 : 0)
+                            // The dragged tile jumps to its new place at once (its offset makes
+                            // up the difference); the others slide.
+                            .transaction { if isDragged { $0.animation = nil } }
+                            .highPriorityGesture(reorderGesture(for: layout), including: model.isEditing ? .all : .subviews)
+                    }
+                }
+                .coordinateSpace(.named(Self.space))
+            }
+            .animation(.smooth(duration: 0.25), value: model.activeID)
+            // Delete badges in a layer of their own, laid out like the grid: inside it, each
+            // tile's glass is drawn on top of anything attached to the tile.
+            .overlay(alignment: .topLeading) {
+                if model.isEditing && model.draggingID == nil {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(model.layouts) { layout in
+                            VStack(spacing: 6) {
+                                Color.clear
+                                    .frame(height: 52)
+                                    .overlay(alignment: .topLeading) {
+                                        if model.deletable.contains(layout.id) {
+                                            DeleteBadge(isArmed: model.pendingDeleteID == layout.id) { model.requestDelete(layout) }
+                                                .offset(x: -5, y: -5)
+                                        }
+                                    }
+                                Color.clear.frame(height: 18)
+                            }
+                            .modifier(Wiggle(isOn: true, seed: layout.id.hashValue))
                         }
                     }
                 }
             }
-            .animation(.smooth(duration: 0.25), value: model.activeID)
         }
     }
 
+    /// Drag a tile in Edit mode to give it another place; the others make room.
+    private func reorderGesture(for layout: Layout) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.space))
+            .onChanged { drag in
+                if model.draggingID == nil {
+                    guard let start = model.layouts.firstIndex(where: { $0.id == layout.id }) else { return }
+                    let centre = Self.centre(of: start)
+                    grab = CGSize(width: drag.startLocation.x - centre.x, height: drag.startLocation.y - centre.y)
+                    model.beginReorder(layout)
+                }
+                // The tile's centre decides which place it's over.
+                let tileCentre = CGPoint(x: drag.location.x - grab.width, y: drag.location.y - grab.height)
+                withAnimation(.smooth(duration: 0.25)) { model.moveDragged(to: index(at: tileCentre)) }
+                if let now = model.layouts.firstIndex(where: { $0.id == layout.id }) {
+                    let centre = Self.centre(of: now)
+                    dragOffset = CGSize(width: tileCentre.x - centre.x, height: tileCentre.y - centre.y)
+                }
+            }
+            .onEnded { _ in
+                withAnimation(.smooth(duration: 0.25)) { dragOffset = .zero }
+                model.endReorder()
+            }
+    }
+
+    private static func centre(of index: Int) -> CGPoint {
+        CGPoint(x: CGFloat(index % 3) * columnPitch + tileWidth / 2, y: CGFloat(index / 3) * rowPitch + 38)
+    }
+
+    private func index(at point: CGPoint) -> Int {
+        let column = min(max(Int((point.x / Self.columnPitch).rounded(.down)), 0), 2)
+        let row = max(Int((point.y / Self.rowPitch).rounded(.down)), 0)
+        return min(row * 3 + column, model.layouts.count - 1)
+    }
+
     private var editingHint: String {
-        model.recordingNote ?? (model.recordingID == nil ? "Click a layout, then type keys" : "Type keys · ⌫ removes · esc cancels")
+        if let note = model.recordingNote { return note }
+        if model.recordingID != nil { return "Type keys · ⌫ clears · esc cancels" }
+        if model.pendingDeleteID != nil { return "Click Delete again to remove it" }
+        if model.isRestorePending { return "Click again to restore the defaults" }
+        return "Drag to reorder · click to redraw"
     }
 }
 
-/// A layout's zones in a glass tile, with its name below; in edit mode, its shortcut.
+/// The iOS-style jiggle for tiles in Edit mode: a small, quick rock, out of step from tile to
+/// tile. Driven by the clock, so it starts and stops cleanly.
+private struct Wiggle: ViewModifier {
+    let isOn: Bool
+    let seed: Int
+
+    func body(content: Content) -> some View {
+        TimelineView(.animation(paused: !isOn)) { context in
+            let phase = Double(abs(seed) % 1000) / 1000 * 2 * .pi
+            let time = context.date.timeIntervalSinceReferenceDate
+            content.rotationEffect(.degrees(isOn ? sin(time * 2 * .pi / 0.26 + phase) * 1.5 : 0))
+        }
+    }
+}
+
+/// A layout's zones in a glass tile, with its name below. In Edit mode: its shortcut below
+/// (click to change), and a click on the tile opens it in the editor. (The delete badges are
+/// drawn over the grid by LayoutGrid.)
 private struct LayoutTile: View {
     let layout: Layout
     let isSelected: Bool
@@ -103,13 +206,14 @@ private struct LayoutTile: View {
     let isTaken: Bool
     let isEditing: Bool
     let isRecording: Bool
-    let action: () -> Void
+    let onTap: () -> Void
+    let onShortcut: () -> Void
 
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
+        VStack(spacing: 6) {
+            Button(action: onTap) {
                 ZoneShapes(zones: layout.zones, gap: 3, cornerRadius: 3) { _ in
                     isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.white.opacity(0.75))
                 }
@@ -118,27 +222,34 @@ private struct LayoutTile: View {
                 .frame(height: 52)
                 .contentShape(.rect(cornerRadius: 12))
                 .glassEffect(isSelected ? .regular.interactive() : .clear.interactive(), in: .rect(cornerRadius: 12))
+            }
+            .buttonStyle(PressDipStyle())
+            .help(isEditing ? "Redraw \(layout.name)" : help)
 
-                Group {
-                    if isEditing {
+            Group {
+                if isEditing {
+                    Button(action: onShortcut) {
                         ShortcutCapsule(text: isRecording ? "Type keys…" : shortcut ?? "None",
                                         isEmpty: shortcut == nil && !isRecording, isTaken: isTaken, isRecording: isRecording)
-                    } else {
+                    }
+                    .buttonStyle(PressDipStyle())
+                    .help(isTaken ? "Another app already uses this shortcut. Click to change it." : "Click to change \(layout.name)'s shortcut")
+                } else {
+                    Button(action: onTap) {
                         Text(layout.name)
                             .font(.caption)
                             .lineLimit(1)
                             .foregroundStyle(isSelected ? .primary : .secondary)
                     }
+                    .buttonStyle(.plain)
                 }
-                .frame(height: 18)
             }
-            .contentShape(Rectangle())
+            .frame(height: 18)
         }
-        .buttonStyle(PressDipStyle())
         .opacity(isEditing || isSelected || isHovering ? 1 : 0.6)
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .onHover { isHovering = $0 }
-        .help(help)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(layout.name) layout")
         .accessibilityValue(shortcut ?? "No shortcut")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -147,6 +258,35 @@ private struct LayoutTile: View {
     private var help: String {
         guard let shortcut else { return layout.name }
         return isTaken ? "\(layout.name)  \(shortcut): another app already uses this shortcut" : "\(layout.name)  \(shortcut)"
+    }
+}
+
+/// ⊖ over a tile in Edit mode; once clicked it reads Delete and the next click deletes.
+private struct DeleteBadge: View {
+    let isArmed: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if isArmed {
+                    Text("Delete")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 7)
+                } else {
+                    Image(systemName: "minus")
+                        .font(.system(size: 9, weight: .heavy))
+                        .frame(width: 18)
+                }
+            }
+            .frame(height: 18)
+            .foregroundStyle(.white)
+            .background(Capsule().fill(isArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(Color(white: 0.45))))
+            .contentShape(.capsule)
+        }
+        .buttonStyle(PressDipStyle())
+        .help(isArmed ? "Click again to delete this layout" : "Delete this layout")
+        .accessibilityLabel(isArmed ? "Confirm delete" : "Delete")
     }
 }
 
@@ -353,7 +493,20 @@ private struct Footer: View {
 
     var body: some View {
         HStack {
-            FooterButton(title: "Edit Layouts…", symbol: "square.and.pencil") { model.editLayouts() }
+            if !model.isEditing {
+                FooterButton(title: "How Panes Works", symbol: "questionmark.circle") { model.showTutorial() }
+                    .help("A quick animated tour of every feature and its shortcuts")
+            }
+            if model.isEditing {
+                FooterButton(title: model.isRestorePending ? "Restore Defaults?" : "Restore Defaults",
+                             symbol: "arrow.counterclockwise", isWarning: model.isRestorePending) {
+                    model.restoreDefaults()
+                }
+                .disabled(!model.canRestoreDefaults)
+                .help(model.canRestoreDefaults
+                      ? "Brings back the built-in layouts as they ship, in their usual order. Layouts you drew stay."
+                      : "The built-in layouts are as they ship")
+            }
             Spacer()
             FooterButton(title: "Quit", symbol: "power") { NSApp.terminate(nil) }
         }
@@ -364,6 +517,7 @@ private struct FooterButton: View {
     let title: String
     let symbol: String
     var font: Font = .callout
+    var isWarning = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -372,7 +526,7 @@ private struct FooterButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(font)
-                .foregroundStyle(isHovering ? .primary : .secondary)
+                .foregroundStyle(isWarning ? AnyShapeStyle(.orange) : isHovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressDipStyle())

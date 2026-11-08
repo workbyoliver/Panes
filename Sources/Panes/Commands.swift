@@ -109,15 +109,14 @@ final class Commands {
         showLayout(layout, on: screen)
     }
 
-    /// A layout's own shortcut (⌃⌥⌘1–9 unless changed): that layout, on the same display as ⌃⌥L.
-    func selectLayout(id: String) {
-        guard let layout = store.layouts.first(where: { $0.id == id }), let screen = currentScreen else { return }
+    /// Makes a layout active on a display and flashes its zones (layout shortcuts).
+    func select(_ layout: Layout, on screen: NSScreen) {
         store.setActive(layout, for: screen)
         showLayout(layout, on: screen)
     }
 
-    /// The focused window's display, or the pointer's.
-    private var currentScreen: NSScreen? {
+    /// The display you're using: the focused window's, or the pointer's.
+    var currentScreen: NSScreen? {
         let frame = AXIsProcessTrusted() ? AXWindow.focused()?.frame : nil
         return frame.flatMap(NSScreen.best(for:)) ?? NSScreen.containing(Coordinates.mouse)
     }

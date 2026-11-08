@@ -46,7 +46,7 @@ extension Zone: Decodable {
     /// For the hand-editable layouts file: "1/3" rather than 0.33333333333333331.
     static func jsonValue(_ value: Double) -> String {
         if value == 0 || value == 1 { return value == 0 ? "0" : "1" }
-        for denominator in 2...12 {
+        for denominator in 2...48 { // the editor's finer grid has 24ths and 16ths
             let numerator = (value * Double(denominator)).rounded()
             if abs(numerator / Double(denominator) - value) < 1e-9 { return "\"\(Int(numerator))/\(denominator)\"" }
         }
@@ -59,6 +59,14 @@ struct Layout: Decodable, Hashable, Identifiable {
     var name: String
     /// In reading order: their position here is the zone's number (⌃⌥1, ⌃⌥2…).
     var zones: [Zone]
+    /// The display it was drawn for (`NSScreen.settingsKey`); nil means every display.
+    var display: String? = nil
+    /// That display's name, so layouts.json reads well. Not used to match.
+    var displayName: String? = nil
+
+    func belongs(on screen: NSScreen) -> Bool {
+        display == nil || display == screen.settingsKey
+    }
 }
 
 /// Turns zones into window frames on one display, with even gaps: `gap` between
@@ -122,23 +130,25 @@ struct ZoneGeometry {
 }
 
 extension Layout {
+    /// The default order (Restore Defaults puts them back like this).
     static let builtIn: [Layout] = [
-        Layout(id: "thirds", name: "Thirds", zones: columns([1, 1, 1])),
-        Layout(id: "focus", name: "Focus", zones: columns([1, 2, 1])),
         Layout(id: "halves", name: "Halves", zones: columns([1, 1])),
+        Layout(id: "thirds", name: "Thirds", zones: columns([1, 1, 1])),
+        Layout(id: "four-columns", name: "Four Columns", zones: columns([1, 1, 1, 1])),
         Layout(id: "quarters", name: "Quarters", zones: grid(columns: 2, rows: 2)),
-        // Numbered by column: 1–2 left, 3 the main panel, 4–5 right. Replaced Sixths.
+        Layout(id: "focus", name: "Focus", zones: columns([1, 2, 1])),
+        Layout(id: "main-side", name: "Main + Side", zones: [
+            Zone(x: 0, y: 0, w: 2.0 / 3, h: 1),
+            Zone(x: 2.0 / 3, y: 0, w: 1.0 / 3, h: 0.5),
+            Zone(x: 2.0 / 3, y: 0.5, w: 1.0 / 3, h: 0.5),
+        ]),
+        // Numbered by column: 1–2 left, 3 the main panel, 4–5 right.
         Layout(id: "main-sides", name: "Main + Sides", zones: [
             Zone(x: 0, y: 0, w: 0.25, h: 0.5),
             Zone(x: 0, y: 0.5, w: 0.25, h: 0.5),
             Zone(x: 0.25, y: 0, w: 0.5, h: 1),
             Zone(x: 0.75, y: 0, w: 0.25, h: 0.5),
             Zone(x: 0.75, y: 0.5, w: 0.25, h: 0.5),
-        ]),
-        Layout(id: "main-side", name: "Main + Side", zones: [
-            Zone(x: 0, y: 0, w: 2.0 / 3, h: 1),
-            Zone(x: 2.0 / 3, y: 0, w: 1.0 / 3, h: 0.5),
-            Zone(x: 2.0 / 3, y: 0.5, w: 1.0 / 3, h: 0.5),
         ]),
     ]
 

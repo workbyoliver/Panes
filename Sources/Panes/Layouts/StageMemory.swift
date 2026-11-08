@@ -82,7 +82,7 @@ final class StageMemory {
             let apps = Set(visible.map { $0.app.split(separator: ".").last.map(String.init) ?? $0.app }).sorted()
             let known = visible.filter { byWindow[$0.id] != nil }.count
             guard let id = Self.decide(visible: visible, byWindow: byWindow, byApp: byApp, current: active.id),
-                  id != active.id, let layout = store.layouts.first(where: { $0.id == id }) else {
+                  id != active.id, let layout = store.layouts(for: screen).first(where: { $0.id == id }) else {
                 Log.debug("stage: now \(apps) (\(known)/\(visible.count) windows remembered), keeping \(active.name)")
                 continue
             }

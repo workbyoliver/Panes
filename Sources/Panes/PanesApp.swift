@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var drag = DragTracker(store: store, mover: mover, overlay: overlay)
     private lazy var layoutShortcuts = LayoutShortcuts(store: store, commands: commands)
     private lazy var stageMemory = StageMemory(store: store)
+    private lazy var editor = LayoutEditorWindow(store: store, commands: commands)
+    private let tutorial = TutorialWindow()
     private var statusItem: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         drag.start()
         stageMemory.start()
         store.onPick = { [weak self] layout, screen in self?.stageMemory.picked(layout, on: screen) }
-        statusItem = StatusItemController(store: store, commands: commands, shortcuts: layoutShortcuts)
+        statusItem = StatusItemController(store: store, commands: commands, shortcuts: layoutShortcuts, editor: editor, tutorial: tutorial)
         store.onChange = { [weak self] in
             self?.layoutShortcuts.layoutsChanged()
             self?.statusItem?.layoutsChanged()

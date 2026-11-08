@@ -14,12 +14,14 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     private var panelClosedAt = Date.distantPast
     private var monitors: [Any] = []
 
-    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts) {
+    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts, editor: LayoutEditorWindow, tutorial: TutorialWindow) {
         self.store = store
         model = PanelModel(store: store, commands: commands, shortcuts: shortcuts)
         super.init()
         model.screen = { [weak self] in self?.screen ?? NSScreen.main ?? NSScreen.screens[0] }
         model.close = { [weak self] in self?.closePanel() }
+        model.openEditor = { layout, screen in editor.open(layout, on: screen) }
+        model.openTutorial = { screen in tutorial.open(on: screen) }
         model.refresh()
 
         if let button = item.button {

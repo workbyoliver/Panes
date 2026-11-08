@@ -1,8 +1,8 @@
 import AppKit
-import UniformTypeIdentifiers
 
 /// The layouts (from ~/Library/Application Support/Panes/layouts.json, written with the
-/// built-ins on first launch) and which one is active on each display.
+/// built-ins on first launch) and which one is active on each display. A layout drawn in the
+/// editor belongs to one display; the rest are on every display.
 final class LayoutStore {
     private(set) var layouts: [Layout] = Layout.builtIn
     private(set) var loadError: String?
@@ -11,17 +11,19 @@ final class LayoutStore {
     /// Called when you pick a layout (not when Panes brings back a stage's layout).
     var onPick: ((Layout, NSScreen) -> Void)?
 
-    let fileURL: URL = {
+    static let defaultURL: URL = {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Panes", isDirectory: true)
         return folder.appendingPathComponent("layouts.json")
     }()
 
+    let fileURL: URL
     private var loadedModificationDate: Date?
     private let activeKey = "activeLayouts"
 
-    init() {
-        if !FileManager.default.fileExists(atPath: fileURL.path) { writeBuiltIns() }
+    init(fileURL: URL = LayoutStore.defaultURL) {
+        self.fileURL = fileURL
+        if !FileManager.default.fileExists(atPath: fileURL.path) { write(Layout.builtIn) }
         reloadIfChanged()
     }
 
@@ -44,27 +46,80 @@ final class LayoutStore {
         onChange?()
     }
 
-    /// Opens layouts.json in a code editor. Not with the default app for .json files (After
-    /// Effects on some Macs), and TextEdit only as a last resort: its smart quotes break JSON.
-    func openInEditor() {
-        let editors = [
-            "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92" /* Cursor */, "dev.zed.Zed",
-            "com.sublimetext.4", "com.barebones.bbedit", "com.panic.Nova", "com.coteditor.CotEditor",
-            "com.apple.dt.Xcode",
-        ]
-        let workspace = NSWorkspace.shared
-        guard let editor = editors.lazy.compactMap({ workspace.urlForApplication(withBundleIdentifier: $0) }).first
-                ?? workspace.urlForApplication(toOpen: .plainText) else {
-            workspace.open(fileURL)
-            return
+    /// The layouts offered on a display: those on every display, plus its own, in file order.
+    func layouts(for screen: NSScreen) -> [Layout] {
+        reloadIfChanged()
+        let mine = layouts.filter { $0.belongs(on: screen) }
+        return mine.isEmpty ? [Layout.builtIn[0]] : mine
+    }
+
+    /// Adds a layout, or replaces the one with the same ID, and writes layouts.json.
+    func save(_ layout: Layout) {
+        reloadIfChanged()
+        var all = layouts
+        if let index = all.firstIndex(where: { $0.id == layout.id }) {
+            all[index] = layout
+        } else {
+            all.append(layout)
         }
-        workspace.open([fileURL], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+        write(all)
+        reloadIfChanged()
+    }
+
+    /// Puts these layouts in this order (a display's list, reordered in the panel). Layouts not
+    /// listed keep their places in the file.
+    func reorder(_ ids: [String]) {
+        reloadIfChanged()
+        let moving = Set(ids)
+        var queue = ids.compactMap { id in layouts.first { $0.id == id } }[...]
+        let reordered = layouts.map { layout in moving.contains(layout.id) && !queue.isEmpty ? queue.removeFirst() : layout }
+        guard reordered != layouts else { return }
+        write(reordered)
+        reloadIfChanged()
+    }
+
+    /// Whether the built-in layouts differ from how they ship: one deleted, redrawn, renamed
+    /// or moved, or one added in an update.
+    var defaultsDiffer: Bool {
+        let builtInIDs = Set(Layout.builtIn.map(\.id))
+        return layouts.filter { builtInIDs.contains($0.id) } != Layout.builtIn
+    }
+
+    /// The built-in layouts as they ship, first and in their usual order: deleted ones come
+    /// back, redrawn ones are reset. Layouts you drew stay, after them, except exact copies of
+    /// a built-in one (such as a hand-drawn four columns), which merge into it.
+    func restoreDefaults() {
+        reloadIfChanged()
+        let builtInIDs = Set(Layout.builtIn.map(\.id))
+        let builtInZones = Set(Layout.builtIn.map(\.zones))
+        write(Layout.builtIn + layouts.filter { !builtInIDs.contains($0.id) && !builtInZones.contains($0.zones) })
+        reloadIfChanged()
+    }
+
+    /// Whether deleting would leave a connected display with no layouts of its own choosing.
+    func canDelete(_ layout: Layout) -> Bool {
+        let rest = layouts.filter { $0.id != layout.id }
+        return NSScreen.screens.allSatisfy { screen in rest.contains { $0.belongs(on: screen) } }
+    }
+
+    func delete(_ layout: Layout) {
+        reloadIfChanged()
+        guard canDelete(layout) else { return NSSound.beep() }
+        write(layouts.filter { $0.id != layout.id })
+        reloadIfChanged()
+    }
+
+    /// Rewrites layouts.json from the layouts in use: the last version that read correctly.
+    /// (For a file broken by hand; Panes itself always writes it whole.)
+    func repairFile() {
+        write(layouts)
+        reloadIfChanged()
     }
 
     func activeLayout(for screen: NSScreen) -> Layout {
-        reloadIfChanged()
+        let available = layouts(for: screen)
         let id = (UserDefaults.standard.dictionary(forKey: activeKey) as? [String: String])?[screen.settingsKey]
-        return layouts.first { $0.id == id } ?? layouts[0]
+        return available.first { $0.id == id } ?? available[0]
     }
 
     /// `picked` is false when Panes chose it (a stage's remembered layout coming back).
@@ -77,44 +132,46 @@ final class LayoutStore {
     }
 
     func cycleLayout(on screen: NSScreen) -> Layout {
+        let available = layouts(for: screen)
         let current = activeLayout(for: screen)
-        let index = layouts.firstIndex(of: current) ?? 0
-        let next = layouts[(index + 1) % layouts.count]
+        let index = available.firstIndex(of: current) ?? 0
+        let next = available[(index + 1) % available.count]
         setActive(next, for: screen)
         return next
     }
 
     /// Written by hand rather than with JSONEncoder: one zone per line, fractions as "1/3".
-    private func writeBuiltIns() {
+    private func write(_ layouts: [Layout]) {
         let help = """
             Each layout is a list of zones. A zone's x, y, w (width) and h (height) are fractions of \
             the screen's usable area, measured from its top-left corner: numbers like 0.25 or text \
-            like "1/3". Zones are numbered in the order listed (⌃⌥1, ⌃⌥2…). Save the file and \
-            Panes picks up the change.
+            like "1/3". Zones are numbered in the order listed (⌃⌥1, ⌃⌥2…). A layout with a \
+            "display" (added by the layout editor) is only offered on that display. Save the file \
+            and Panes picks up the change.
             """
-        let helpJSON = (try? JSONSerialization.data(withJSONObject: help, options: [.fragmentsAllowed, .withoutEscapingSlashes]))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
-        let layouts = Layout.builtIn.map { layout in
+        let entries = layouts.map { layout in
             let zones = layout.zones.map { z in
                 "        { \"x\": \(Zone.jsonValue(z.x)), \"y\": \(Zone.jsonValue(z.y)), \"w\": \(Zone.jsonValue(z.w)), \"h\": \(Zone.jsonValue(z.h)) }"
             }.joined(separator: ",\n")
-            return """
-                    {
-                      "id": "\(layout.id)",
-                      "name": "\(layout.name)",
-                      "zones": [
-                \(zones)
-                      ]
-                    }
-                """
+            var fields = ["      \"id\": \(Self.json(layout.id))", "      \"name\": \(Self.json(layout.name))"]
+            if let display = layout.display { fields.append("      \"display\": \(Self.json(display))") }
+            if let name = layout.displayName { fields.append("      \"displayName\": \(Self.json(name))") }
+            fields.append("      \"zones\": [\n\(zones)\n      ]")
+            return "    {\n" + fields.joined(separator: ",\n") + "\n    }"
         }.joined(separator: ",\n")
-        let text = "{\n  \"help\": \(helpJSON),\n  \"layouts\": [\n\(layouts)\n  ]\n}\n"
+        let text = "{\n  \"help\": \(Self.json(help)),\n  \"layouts\": [\n\(entries)\n  ]\n}\n"
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data(text.utf8).write(to: fileURL, options: .atomic)
         } catch {
             loadError = error.localizedDescription
         }
+    }
+
+    /// A JSON string literal, escaped.
+    private static func json(_ string: String) -> String {
+        (try? JSONSerialization.data(withJSONObject: string, options: [.fragmentsAllowed, .withoutEscapingSlashes]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
     }
 
     private static func describe(_ error: DecodingError) -> String {
