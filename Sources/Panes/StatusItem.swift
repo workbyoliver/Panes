@@ -14,9 +14,10 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     private var panelClosedAt = Date.distantPast
     private var monitors: [Any] = []
 
-    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts, editor: LayoutEditorWindow, tutorial: TutorialWindow) {
+    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts, workspaces: Workspaces,
+         editor: LayoutEditorWindow, tutorial: TutorialWindow) {
         self.store = store
-        model = PanelModel(store: store, commands: commands, shortcuts: shortcuts)
+        model = PanelModel(store: store, commands: commands, shortcuts: shortcuts, workspaces: workspaces)
         super.init()
         model.screen = { [weak self] in self?.screen ?? NSScreen.main ?? NSScreen.screens[0] }
         model.close = { [weak self] in self?.closePanel() }
@@ -63,6 +64,10 @@ final class StatusItemController: NSObject, NSWindowDelegate {
         // layout shortcut being typed go to that first.
         let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isOpen else { return event }
+            if self.model.isNamingWorkspace { // typing a name: esc cancels it, everything else is text
+                if event.keyCode == 53 { self.model.cancelWorkspaceName(); return nil }
+                return event
+            }
             if self.model.handleKey(event) { return nil }
             switch Int(event.keyCode) {
             case 53: self.closePanel()

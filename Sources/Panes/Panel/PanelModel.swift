@@ -21,6 +21,8 @@ final class PanelModel {
     private(set) var frontApp: NSRunningApplication?
     private(set) var windowTitle = ""
     var canMoveWindow: Bool { target != nil }
+    /// The target window is pinned (its button says Unpin).
+    private(set) var isTargetPinned = false
     private var target: AXWindow?
     private(set) var gap = Settings.gap
     private(set) var snapAtEdges = Settings.snapAtEdges
@@ -37,6 +39,13 @@ final class PanelModel {
     private(set) var pendingDeleteID: String?
     /// Layouts that can go (a display always keeps at least one).
     private(set) var deletable: Set<String> = []
+    // Workspaces (saved stages) on this display.
+    private(set) var workspaces: [Workspace] = []
+    private(set) var isNamingWorkspace = false
+    var workspaceName = ""
+    /// The workspace whose delete badge was clicked once in Edit mode.
+    private(set) var pendingDeleteWorkspaceID: String?
+
     /// Whether Restore Defaults has anything to do, and whether it's been clicked once.
     private(set) var canRestoreDefaults = false
     private(set) var isRestorePending = false
@@ -56,6 +65,7 @@ final class PanelModel {
     @ObservationIgnored private let store: LayoutStore
     @ObservationIgnored private let commands: Commands
     @ObservationIgnored private let shortcuts: LayoutShortcuts
+    @ObservationIgnored private let workspaceStore: Workspaces
     /// The display the menu bar item is on.
     @ObservationIgnored var screen: () -> NSScreen = { NSScreen.main ?? NSScreen.screens[0] }
     @ObservationIgnored var close: () -> Void = {}
@@ -64,10 +74,52 @@ final class PanelModel {
     /// Opens "How Panes Works" on the panel's display.
     @ObservationIgnored var openTutorial: (NSScreen) -> Void = { _ in }
 
-    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts) {
+    init(store: LayoutStore, commands: Commands, shortcuts: LayoutShortcuts, workspaces: Workspaces) {
         self.store = store
         self.commands = commands
         self.shortcuts = shortcuts
+        self.workspaceStore = workspaces
+        workspaces.onChange = { [weak self] in self?.refreshWorkspaces() }
+    }
+
+    func refreshWorkspaces() {
+        let key = screen().settingsKey
+        workspaces = workspaceStore.all.filter { $0.display == key }
+    }
+
+    // MARK: Workspaces
+
+    func startSavingWorkspace() {
+        pendingDeleteWorkspaceID = nil
+        workspaceName = workspaceStore.suggestedName()
+        isNamingWorkspace = true
+    }
+
+    func confirmWorkspaceName() {
+        let name = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return NSSound.beep() }
+        isNamingWorkspace = false
+        workspaceStore.saveStage(named: name, on: screen()) // its change refreshes the list
+    }
+
+    func cancelWorkspaceName() {
+        isNamingWorkspace = false
+    }
+
+    func restoreWorkspace(_ workspace: Workspace) {
+        let screen = screen()
+        close()
+        workspaceStore.restore(workspace, fallback: screen)
+    }
+
+    /// In Edit mode: the first click arms it, the second deletes.
+    func requestDeleteWorkspace(_ workspace: Workspace) {
+        guard pendingDeleteWorkspaceID == workspace.id else {
+            pendingDeleteWorkspaceID = workspace.id
+            return
+        }
+        pendingDeleteWorkspaceID = nil
+        workspaceStore.delete(workspace)
     }
 
     func refresh() {
@@ -77,6 +129,7 @@ final class PanelModel {
         let focused = Permissions.hasAccessibility ? AXWindow.focused() : nil
         target = focused?.isMovable == true ? focused : nil
         windowTitle = target?.title ?? ""
+        isTargetPinned = target?.windowID.map(Pins.shared.isPinned) ?? false
         gap = Settings.gap
         snapAtEdges = Settings.snapAtEdges
         leaveRoomForStageManager = Settings.leaveRoomForStageManager
@@ -84,6 +137,7 @@ final class PanelModel {
         stageManagerOn = StageManager.isOn
         opensAtLogin = Permissions.opensAtLogin
         refreshGeometry()
+        refreshWorkspaces()
         warnings = currentWarnings()
     }
 
@@ -199,6 +253,8 @@ final class PanelModel {
         stopRecording()
         endReorder()
         pendingDeleteID = nil
+        pendingDeleteWorkspaceID = nil
+        isNamingWorkspace = false
         isRestorePending = false
         isEditing = false
     }
@@ -271,6 +327,12 @@ final class PanelModel {
     func centre() {
         guard let target else { return NSSound.beep() }
         commands.centre(window: target)
+        close()
+    }
+
+    func togglePin() {
+        guard let target else { return NSSound.beep() }
+        Pins.shared.toggle(target)
         close()
     }
 

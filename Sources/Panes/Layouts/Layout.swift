@@ -75,6 +75,11 @@ struct ZoneGeometry {
     let area: CGRect
     let gap: CGFloat
 
+    init(area: CGRect, gap: CGFloat) {
+        self.area = area
+        self.gap = gap
+    }
+
     init(screen: NSScreen, gap: CGFloat) {
         var area = screen.visibleRect
         let inset = StageManager.leftInset
@@ -102,6 +107,28 @@ struct ZoneGeometry {
     var fill: CGRect { frame(for: CGRect(x: 0, y: 0, width: 1, height: 1)) }
 
     func frames(_ layout: Layout) -> [CGRect] { layout.zones.map { frame(for: $0.unit) } }
+
+    /// Where a window goes on another display. In a zone: the same zone if that display has the
+    /// same layout, otherwise the zone where the window's centre falls. Full screen stays full
+    /// screen; anything else keeps its place and size relative to the screen (shrunk to fit).
+    static func displayTarget(for frame: CGRect, from source: ZoneGeometry, layout sourceLayout: Layout,
+                              to target: ZoneGeometry, layout targetLayout: Layout) -> (frame: CGRect, snapped: Bool) {
+        if source.fill.isClose(to: frame, tolerance: 3) { return (target.fill, true) }
+        let a = source.area, b = target.area
+        if let index = source.frames(sourceLayout).firstIndex(where: { $0.isClose(to: frame, tolerance: 3) }) {
+            let targetFrames = target.frames(targetLayout)
+            if sourceLayout.zones == targetLayout.zones { return (targetFrames[index], true) }
+            let centre = CGPoint(x: (frame.midX - a.minX) / a.width, y: (frame.midY - a.minY) / a.height)
+            let zone = targetLayout.zones.firstIndex { $0.unit.contains(centre) }
+                ?? targetLayout.zones.indices.min { $0.distanceSquared(centre, targetLayout) < $1.distanceSquared(centre, targetLayout) }
+                ?? 0
+            return (targetFrames[zone], true)
+        }
+        var relative = CGRect(x: b.minX + (frame.minX - a.minX) / a.width * b.width, y: b.minY + (frame.minY - a.minY) / a.height * b.height,
+                              width: frame.width / a.width * b.width, height: frame.height / a.height * b.height).integral
+        relative.size = CGSize(width: min(relative.width, b.width), height: min(relative.height, b.height))
+        return (relative.clamped(to: b), false)
+    }
 
     /// The zone (or the whole screen) a window with this frame is sitting in, if any.
     func placement(of frame: CGRect, in layout: Layout) -> CGRect? {
@@ -169,5 +196,13 @@ extension Layout {
                      w: 1 / Double(columns), h: 1 / Double(rows))
             }
         }
+    }
+}
+
+private extension Int {
+    /// How far a zone's centre is from a point, in unit coordinates (squared).
+    func distanceSquared(_ point: CGPoint, _ layout: Layout) -> Double {
+        let unit = layout.zones[self].unit
+        return pow(unit.midX - point.x, 2) + pow(unit.midY - point.y, 2)
     }
 }

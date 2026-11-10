@@ -26,6 +26,7 @@ struct PanesPanelView: View {
             }
             LayoutGrid(model: model)
             MoveSection(model: model)
+            WorkspacesSection(model: model)
             Divider().opacity(0.5)
             SettingsSection(model: model)
             Footer(model: model)
@@ -344,6 +345,8 @@ private struct MoveSection: View {
                     ActionButton(title: "Fill", symbol: "rectangle.inset.filled", shortcut: .fill) { model.fill() }
                     ActionButton(title: "Centre", symbol: "rectangle.center.inset.filled", shortcut: .centre) { model.centre() }
                     ActionButton(title: "Undo", symbol: "arrow.uturn.backward", shortcut: .undo) { model.undo() }
+                    ActionButton(title: model.isTargetPinned ? "Unpin" : "Pin", symbol: model.isTargetPinned ? "pin.slash" : "pin",
+                                 shortcut: .pin) { model.togglePin() }
                 }
             }
             .disabled(!model.canMoveWindow)
@@ -426,7 +429,9 @@ private struct ActionButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.callout.weight(.medium))
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .contentShape(.capsule)
@@ -434,6 +439,98 @@ private struct ActionButton: View {
         .buttonStyle(PressDipStyle())
         .glassEffect(.regular.interactive(), in: .capsule)
         .help("\(title)  \(shortcut.display)")
+    }
+}
+
+// MARK: - Workspaces
+
+/// Saved stages: Save Stage names the current one; click a name to bring it back. The names
+/// scroll sideways, so saving or deleting never changes the panel's size.
+private struct WorkspacesSection: View {
+    @Bindable var model: PanelModel
+    @FocusState private var isNameFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionTitle("Workspaces")
+                Spacer()
+                if !model.isNamingWorkspace && !model.isEditing {
+                    FooterButton(title: "Save Stage", symbol: "plus", font: .caption) { model.startSavingWorkspace() }
+                        .help("Save the windows on this stage, their zones and the layout, under a name")
+                }
+            }
+            .frame(height: 18)
+            Group {
+                if model.isNamingWorkspace {
+                    HStack(spacing: 8) {
+                        TextField("Name", text: $model.workspaceName)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($isNameFocused)
+                            .onSubmit { model.confirmWorkspaceName() }
+                        Chip(title: "Save", prominent: true) { model.confirmWorkspaceName() }
+                        Chip(title: "Cancel") { model.cancelWorkspaceName() }
+                    }
+                    .onAppear { isNameFocused = true }
+                } else if model.workspaces.isEmpty {
+                    Text("Save a stage, then bring it back with a click.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(model.workspaces) { workspace in
+                                workspaceChip(workspace)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(height: 28)
+        }
+    }
+
+    @ViewBuilder
+    private func workspaceChip(_ workspace: Workspace) -> some View {
+        let apps = Array(NSOrderedSet(array: workspace.entries.map(\.appName))).compactMap { $0 as? String }.joined(separator: ", ")
+        if model.isEditing {
+            let armed = model.pendingDeleteWorkspaceID == workspace.id
+            Chip(title: armed ? "Delete \(workspace.name)?" : workspace.name, symbol: "minus.circle.fill", warning: armed) {
+                model.requestDeleteWorkspace(workspace)
+            }
+            .help(armed ? "Click again to delete this workspace" : "Delete this workspace")
+        } else {
+            Chip(title: workspace.name, symbol: "square.stack.3d.up") { model.restoreWorkspace(workspace) }
+                .help("Bring back \(workspace.name): \(apps)")
+        }
+    }
+}
+
+/// A small capsule button (tap, so the first click counts).
+private struct Chip: View {
+    let title: String
+    var symbol: String?
+    var prominent = false
+    var warning = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let symbol { Image(systemName: symbol).font(.caption2) }
+            Text(title).lineLimit(1)
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(warning ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+        .padding(.horizontal, 11)
+        .frame(height: 26)
+        .background(Capsule().fill(warning ? AnyShapeStyle(Color.red) : prominent ? AnyShapeStyle(Color.accentColor)
+                                   : AnyShapeStyle(.white.opacity(isHovering ? 0.2 : 0.12))))
+        .contentShape(.capsule)
+        .onHover { isHovering = $0 }
+        .onTapGesture(perform: action)
     }
 }
 
@@ -510,6 +607,7 @@ private struct Footer: View {
             Spacer()
             FooterButton(title: "Quit", symbol: "power") { NSApp.terminate(nil) }
         }
+        .frame(height: 20) // its buttons' symbols differ in height between modes
     }
 }
 

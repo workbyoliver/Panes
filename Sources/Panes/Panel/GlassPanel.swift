@@ -10,7 +10,7 @@ final class GlassPanel: NSPanel {
     private let glass = NSGlassEffectView()
     private let content: NSView
 
-    init(content: NSView) {
+    init(content: NSView, cornerRadius: CGFloat = GlassPanel.cornerRadius) {
         self.content = content
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
@@ -31,7 +31,7 @@ final class GlassPanel: NSPanel {
         // AppKit glass blurs what's behind the window; SwiftUI's .glassEffect only samples
         // what's inside it, which in an otherwise empty panel looks opaque.
         glass.style = .regular
-        glass.cornerRadius = Self.cornerRadius
+        glass.cornerRadius = cornerRadius
         content.frame = glass.bounds
         content.autoresizingMask = [.width, .height]
         glass.contentView = content
@@ -39,7 +39,7 @@ final class GlassPanel: NSPanel {
         // Clip to the rounded shape so the corners are truly empty and the shadow follows the curve.
         let rounded = NSView()
         rounded.wantsLayer = true
-        rounded.layer?.cornerRadius = Self.cornerRadius
+        rounded.layer?.cornerRadius = cornerRadius
         rounded.layer?.cornerCurve = .continuous
         rounded.layer?.masksToBounds = true
         glass.frame = rounded.bounds

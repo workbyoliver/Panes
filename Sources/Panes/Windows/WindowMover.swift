@@ -62,6 +62,16 @@ final class WindowMover {
         return entry.floating
     }
 
+    /// Whether Panes put this window where it is now.
+    func isPlaced(_ id: CGWindowID, at frame: CGRect) -> Bool {
+        memory[id].map { isSnapped($0, frame: frame) } ?? false
+    }
+
+    /// The window was resized together with its neighbours: still in its (reshaped) zone.
+    func resnap(_ id: CGWindowID, to frame: CGRect) {
+        memory[id, default: Memory()].snapped = frame
+    }
+
     /// The window left its zone (dragged out): it's floating from here on.
     func unsnap(_ id: CGWindowID) {
         memory[id]?.snapped = nil

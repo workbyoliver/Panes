@@ -259,7 +259,7 @@ private struct ZoneTile: View {
     }
 }
 
-private struct GridLines: Shape {
+nonisolated private struct GridLines: Shape {
     let columns: Int
     let rows: Int
 

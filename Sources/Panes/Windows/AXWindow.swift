@@ -36,6 +36,14 @@ struct AXWindow {
 
     var title: String? { element.attribute(kAXTitleAttribute) }
 
+    /// Brings the window to the front, and its app with it (through Accessibility, which
+    /// macOS honours where a background app's activation request may be refused).
+    func focus() {
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        element.setBool(true, for: kAXMainAttribute)
+        AXUIElementCreateApplication(pid).setBool(true, for: kAXFrontmostAttribute)
+    }
+
     /// Top-left coordinates.
     var frame: CGRect? {
         guard let position: CGPoint = element.value(kAXPositionAttribute),

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var stageMemory = StageMemory(store: store)
     private lazy var editor = LayoutEditorWindow(store: store, commands: commands)
     private let tutorial = TutorialWindow()
+    private lazy var workspaces = Workspaces(store: store, mover: mover, commands: commands)
     private var statusItem: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         drag.start()
         stageMemory.start()
         store.onPick = { [weak self] layout, screen in self?.stageMemory.picked(layout, on: screen) }
-        statusItem = StatusItemController(store: store, commands: commands, shortcuts: layoutShortcuts, editor: editor, tutorial: tutorial)
+        statusItem = StatusItemController(store: store, commands: commands, shortcuts: layoutShortcuts, workspaces: workspaces,
+                                          editor: editor, tutorial: tutorial)
         store.onChange = { [weak self] in
             self?.layoutShortcuts.layoutsChanged()
             self?.statusItem?.layoutsChanged()
@@ -54,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keys.register(.centre) { commands.centre() }
         keys.register(.undo) { commands.undo() }
         keys.register(.nextLayout) { commands.nextLayout() }
+        keys.register(.display(.left)) { commands.moveToDisplay(.left) }
+        keys.register(.display(.right)) { commands.moveToDisplay(.right) }
+        keys.register(.cycleStack) { commands.cycleStack() }
+        keys.register(.pin) { Pins.shared.toggleFocused() }
         for shortcut in keys.failed { Log.debug("hotkey taken: keyCode \(shortcut.keyCode) \(shortcut.modifiers)") }
         Log.debug("hotkeys: \(keys.failed.isEmpty ? "all registered" : "\(keys.failed.count) failed"); accessibility \(Permissions.hasAccessibility); layouts \(store.layouts.map(\.name)) \(store.loadError ?? "")")
     }

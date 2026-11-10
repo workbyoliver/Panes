@@ -145,6 +145,22 @@ extension HotKeys.Shortcut {
     /// Only registered while a ⌥-drag is showing the zones.
     static let dragTab = Self(keyCode: kVK_Tab, modifiers: .option, keyEquivalent: "\t")
     static let dragShiftTab = Self(keyCode: kVK_Tab, modifiers: [.option, .shift], keyEquivalent: "\t")
+    /// ⌥1–9 while ⌥-dragging: that zone becomes the target.
+    static func dragZone(_ number: Int) -> Self {
+        Self(keyCode: zoneKeys[number - 1], modifiers: .option, keyEquivalent: "\(number)")
+    }
+
+    /// ⌃⌥⌘ ← / →: the focused window to the previous or next display.
+    static func display(_ direction: Direction) -> Self {
+        let plain = move(direction)
+        return Self(keyCode: plain.keyCode, modifiers: [.control, .option, .command], keyEquivalent: plain.keyEquivalent)
+    }
+
+    /// ⌃⌥Tab: the next window in the focused window's zone (its stack). Tab, not `, because
+    /// the backtick sits on different keys on US and UK keyboards.
+    static let cycleStack = key(kVK_Tab, "\t")
+    /// ⌃⌥P: pin the focused window as a floating live copy, or unpin it.
+    static let pin = key(kVK_ANSI_P, "p")
 
     /// A layout's default: ⌃⌥⌘ and its place in the panel's grid.
     static func layout(_ number: Int) -> Self {
@@ -155,7 +171,8 @@ extension HotKeys.Shortcut {
     static var reserved: [Self] {
         let directions = [Direction.left, .right, .up, .down]
         return directions.map(move) + directions.map(grow) + (1...9).map(zone)
-            + [fill, centre, undo, nextLayout, dragTab, dragShiftTab]
+            + [fill, centre, undo, nextLayout, dragTab, dragShiftTab, cycleStack, pin]
+            + [Direction.left, .right].map(display) + (1...9).map(dragZone)
     }
 
     /// A shortcut typed in the panel: needs ⌃, ⌥ or ⌘ (⇧ alone would take over typing).

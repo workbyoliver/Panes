@@ -14,9 +14,13 @@ Panes is a menu bar window manager that works like zones on Windows. You pick a 
 
 - **Layouts:** Halves, Thirds, Four Columns, Quarters, Focus (¼ · ½ · ¼), Main + Side (⅔ and a split ⅓) and Main + Sides (two stacked windows either side of a big one).
 - **Draw your own:** click **New** in the panel and drag across a grid of your display to draw zones. They're numbered in the order you draw them. A layout you draw belongs to the display you drew it on; each display has up to nine (see [Layouts](#layouts)).
-- **⌥-drag:** hold ⌥ while dragging a window to see the numbered zones in glass, with the target highlighted. Add ⇧ to span from one zone to another, or press Tab to switch layout mid-drag. Let go of ⌥ before you drop for an ordinary move.
+- **⌥-drag:** hold ⌥ while dragging a window to see the numbered zones in glass, with the target highlighted. Add ⇧ to span from one zone to another, press a number to pick that zone, or press Tab to switch layout mid-drag. Let go of ⌥ before you drop for an ordinary move.
 - **Edge snap:** drag a window to the left or right edge of the screen for the zone on that side, or to the top to fill the screen. Switch it off in the panel.
-- **Swapping:** move a window into a zone another window already fills, and the two swap places.
+- **Swapping and stacks:** move a window into a zone another window already fills, and the two swap places. Hold ⌘ too at the drop to stack it there instead; ⌃⌥Tab brings the next window in a stack to the front.
+- **Resize together:** drag the edge between two snapped windows and both follow, keeping the gap.
+- **Other displays:** ⌃⌥⌘ ← / → sends a window to the next display, into the matching zone.
+- **Pin:** ⌃⌥P keeps a live copy of a window floating above everything, on every Space and stage. Click it to go to the window.
+- **Workspaces:** Save Stage keeps the windows on a stage, their zones and the layout under a name; click it to bring them back.
 - **Own size back:** drag a snapped window out of its zone and it returns to the size it had before.
 - **Menu bar panel:** the icon shows the active layout. Click it for a glass panel with:
   - every layout as a tile, and **Edit**: drag tiles to reorder them (they wiggle, iOS style), click one to redraw it, delete it, change its shortcut, or **Restore Defaults**
@@ -37,10 +41,15 @@ Panes is a menu bar window manager that works like zones on Windows. You pick a 
 | ⌃⌥ C | Centre at 80% of the screen's width and height |
 | ⌃⌥ ⌫ | Undo, stepping back through the last 20 moves |
 | ⌃⌥ L | Next layout |
+| ⌃⌥⌘ ← / → | Move the window to the previous or next display |
+| ⌃⌥ Tab | Bring the next window in this zone's stack to the front |
+| ⌃⌥ P | Pin the window as a floating live copy, or unpin it |
 | ⌃⌥⌘ 1–9 | Switch to layout 1–9 on the display you're using, in the panel's order |
 | ⌥ while dragging | Show the zones; drop to snap |
 | ⇧ with ⌥, while dragging | Span zones |
 | Tab while ⌥-dragging | Next layout |
+| 1–9 while ⌥-dragging | Pick that zone |
+| ⌘ with ⌥, at the drop | Stack on a taken zone instead of swapping |
 
 To change a layout's shortcut, open the panel, click **Edit**, click the shortcut under a layout and type the new keys (⌫ removes the shortcut, Esc cancels). In the panel, Tab also switches layout and Esc closes it.
 
@@ -111,6 +120,7 @@ The build signs the app with your Apple Development certificate if you have one,
 ## Permissions
 
 - **Accessibility:** to move and resize other apps' windows. Panes asks on first launch.
+- **Screen Recording:** only for Pin, which shows a live copy of a window. Asked the first time you pin one; you may need to reopen Panes after allowing it.
 
 The keyboard shortcuts need no permission.
 
@@ -120,6 +130,7 @@ The keyboard shortcuts need no permission.
 - **⌥-drags:** a global mouse monitor notices a window drag, and the window server says which window is moving. The zone overlay is a click-through glass panel placed directly below that window, so it never covers it.
 - **Shortcuts:** Carbon hot keys, so the key press never reaches the app in front.
 - **Swapping:** the window server lists what's on screen. A window that already fills the target zone moves into the zone yours left.
+- **Pin:** macOS lets no app keep another app's window on top, so a pin is a ScreenCaptureKit stream of the window in Panes's own floating panel.
 - **A layout per stage:** macOS has no API for Stage Manager stages, but only the current stage's windows are on screen. Panes remembers your layout for those windows, and when other windows come forward, the layout most of them had comes back. Each app's last layout covers windows Panes hasn't seen, such as after a restart.
 
 ## Caveats
@@ -127,6 +138,7 @@ The keyboard shortcuts need no permission.
 - Panes matches Accessibility windows to window-server windows with a private macOS function (`_AXUIElementGetWindow`), as most Mac window managers do, so a macOS update could break it.
 - It's only been tested on one display so far.
 - Remembering a layout per stage is a best guess from which windows are on screen. After an app or Mac restart it falls back to each app's last layout.
+- Stage Manager lets no app group windows into a stage, so restoring a workspace arranges the windows already on the stage; apps it has to open get a stage of their own.
 - Builds aren't notarised, so the first launch needs Open Anyway (see [Download](#download)).
 
 ## Project layout
@@ -140,6 +152,8 @@ Sources/Panes/
   Panel/                 glass panel and its SwiftUI content
   Editor/                the layout editor window
   Tutorial/              How Panes Works
+  Pins/                  pinned live copies
+  Workspaces/            saved stages
   Layouts/               layouts, zone geometry, layouts.json, shortcuts, per-stage memory
   Drag/                  ⌥-drag and edge snap
   Overlay/               glass zones shown while dragging

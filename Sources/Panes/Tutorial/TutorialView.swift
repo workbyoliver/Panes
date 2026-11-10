@@ -4,7 +4,7 @@ import SwiftUI
 @Observable
 final class TutorialModel {
     var page = 0
-    static let pageCount = 6
+    static let pageCount = 7
 
     func next() { page = min(page + 1, Self.pageCount - 1) }
     func back() { page = max(page - 1, 0) }
@@ -94,7 +94,8 @@ struct TutorialView: View {
              illustration: AnyView(LayoutsScene())),
         Page(title: "Hold ⌥ while you drag",
              text: "Drag any window by its title bar and hold ⌥: the zones light up. Let go over one and the window fills it.",
-             keys: [KeyHint("⌥ + drag", "Show zones"), KeyHint("⇧", "Span two zones"), KeyHint("Tab", "Switch layout mid-drag")],
+             keys: [KeyHint("⌥ + drag", "Show zones"), KeyHint("⇧", "Span two zones"), KeyHint("Tab", "Switch layout mid-drag"),
+                    KeyHint("⌥ 1–9", "Pick a zone by number"), KeyHint("⌥⌘ at the drop", "Stack instead of swap")],
              illustration: AnyView(DragScene())),
         Page(title: "Move with the keyboard",
              text: "The focused window hops between zones, grows across them, fills the screen or centres, and every move can be undone.",
@@ -110,9 +111,14 @@ struct TutorialView: View {
              keys: [KeyHint("New", "Draw a layout"), KeyHint("Edit", "Reorder, delete, shortcuts"), KeyHint("Restore Defaults", "Bring back the built-ins")],
              illustration: AnyView(EditorScene())),
         Page(title: "Made for Stage Manager",
-             text: "Zones leave room for the strip of recent apps, and each stage remembers its layout: switch stages and it comes back.",
-             keys: [KeyHint("Remember layout per stage", "In the panel"), KeyHint("Leave room for Stage Manager", "In the panel")],
+             text: "Zones leave room for the strip of recent apps, each stage remembers its layout, and Save Stage keeps a stage's windows and zones as a workspace to bring back.",
+             keys: [KeyHint("Save Stage", "A workspace"), KeyHint("Remember layout per stage", "In the panel")],
              illustration: AnyView(StageScene())),
+        Page(title: "Resize together, stack and pin",
+             text: "Drag the edge between snapped windows and both follow. Stack windows in one zone, send them to another display, or pin a live copy that floats above everything.",
+             keys: [KeyHint("⌃⌥⌘ ← →", "Other display"), KeyHint("⌃⌥ Tab", "Next in the stack"),
+                    KeyHint("⌃⌥ P", "Pin a live copy")],
+             illustration: AnyView(ResizeScene())),
     ]
 }
 
@@ -518,6 +524,40 @@ private struct StageScene: View {
                         MiniWindow(tint: Color(red: 0.95, green: 0.55, blue: 0.2)).placed(halves[index]).opacity(s)
                     }
                     KeysPressed(keys: s > 0.5 ? "Stage 2 · Halves" : "Stage 1 · Thirds")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 12)
+                }
+            }
+        }
+    }
+}
+
+/// The edge between two snapped windows dragged across and back: both follow; then a pinned
+/// copy floats in the corner.
+private struct ResizeScene: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = loopTime(context.date, 6)
+            MiniScreen { area in
+                let halves = area.frames("halves")
+                // The shared edge goes right, then back past the middle, then home.
+                let shift = 70 * progress(t, 0.5, 1.5) - 120 * progress(t, 1.9, 3.0) + 50 * progress(t, 3.4, 4.0)
+                let left = CGRect(x: halves[0].minX, y: halves[0].minY, width: halves[0].width + shift, height: halves[0].height)
+                let right = CGRect(x: halves[1].minX + shift, y: halves[1].minY, width: halves[1].width - shift, height: halves[1].height)
+                let pinned = CGRect(x: area.rect.maxX - 104, y: area.rect.maxY - 66, width: 96, height: 58)
+                ZStack(alignment: .topLeading) {
+                    MiniWindow().placed(left)
+                    MiniWindow(tint: Color(red: 0.95, green: 0.55, blue: 0.2)).placed(right)
+                    Pointer().offset(x: left.maxX + 2, y: left.midY - 8).opacity(t < 4.2 ? 1 : 0)
+                    MiniWindow(tint: Color(red: 0.3, green: 0.75, blue: 0.45))
+                        .placed(pinned)
+                        .overlay(alignment: .topLeading) {
+                            Image(systemName: "pin.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                .offset(x: pinned.maxX - 14, y: pinned.minY + 1)
+                        }
+                        .opacity(progress(t, 4.3, 4.7) * (1 - progress(t, 5.6, 5.95)))
+                        .scaleEffect(0.9 + 0.1 * progress(t, 4.3, 4.7), anchor: .bottomTrailing)
+                    KeysPressed(keys: t > 4.3 && t < 5.6 ? "⌃⌥ P" : nil)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .padding(.bottom, 12)
                 }

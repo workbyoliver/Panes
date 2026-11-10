@@ -96,6 +96,33 @@ final class Commands {
         mover.snap(c.window, to: centred, area: area, swap: false)
     }
 
+    /// ⌃⌥⌘ ← / →: to the previous or next display (left to right), into the same zone of its
+    /// layout, or the same relative place if the window wasn't in a zone.
+    func moveToDisplay(_ direction: Direction) {
+        guard let c = context() else { return }
+        let screens = NSScreen.screens.sorted { ($0.rect.minX, $0.rect.minY) < ($1.rect.minX, $1.rect.minY) }
+        guard screens.count > 1, let index = screens.firstIndex(where: { $0.settingsKey == c.screen.settingsKey }) else {
+            return NSSound.beep()
+        }
+        let next = screens[(index + (direction == .left ? -1 : 1) + screens.count) % screens.count]
+        let geometry = ZoneGeometry(screen: next, gap: Settings.gap)
+        let target = ZoneGeometry.displayTarget(for: c.frame, from: c.geometry, layout: c.layout,
+                                                to: geometry, layout: store.activeLayout(for: next))
+        mover.snap(c.window, to: target.frame, area: geometry.area, swap: false)
+        if !target.snapped, let id = c.window.windowID { mover.unsnap(id) } // it was floating; it still is
+    }
+
+    /// ⌃⌥Tab: the next window in the focused window's zone (its stack) comes to the front.
+    func cycleStack() {
+        guard let c = context(), let id = c.window.windowID else { return }
+        let zone = c.geometry.placement(of: c.frame, in: c.layout) ?? c.frame
+        let stack = WindowList.windows(filling: zone)
+        Log.debug("stack: \(stack.count) window(s) in \(zone.short): \(stack.map { $0.windowID.map(String.init) ?? "?" }), focused \(id)")
+        guard stack.count > 1, let back = stack.last, back.windowID != id else { return NSSound.beep() }
+        back.focus()
+        Log.debug("stack: focused \(back.windowID.map(String.init) ?? "?"); front app now \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
+    }
+
     /// ⌃⌥⌫
     func undo(window: AXWindow? = nil) {
         guard let c = context(for: window) else { return }
